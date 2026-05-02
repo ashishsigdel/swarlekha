@@ -26,3 +26,9 @@ venv/
 
 #examples
 examples/output/
+
+nepali_tts_dataset/
+training/logs/
+training/cache/
+training/outputs/
+
