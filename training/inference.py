@@ -19,7 +19,7 @@ class NepaliTTS:
     def __init__(
         self,
         weights_dir: str = "swarlekha_model/weights",
-        checkpoint_dir: str = "training/outputs/checkpoints/best",
+        checkpoint_dir: str = "training/outputs/checkpoints/checkpoint_35000",
         tokenizer_path: str = "training/outputs/nepali_tokenizer.json",
         device: str = "cuda",
     ):
