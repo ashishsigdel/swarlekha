@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Play, Volume2 } from "lucide-react";
+import { Volume2 } from "lucide-react";
 
 interface DemoItem {
   id: string;
