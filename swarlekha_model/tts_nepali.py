@@ -141,27 +141,57 @@ class SwarlekhaNepaliTTS:
         )
         ve.to(device).eval()
 
+
+        #loaded the nepali T3 model
         t3 = T3(T3Config.nepali())
-        t3_state = load_safetensors(ckpt_dir / "t3_cfg.safetensors")
-        if "model" in t3_state.keys():
-            t3_state = t3_state["model"][0]
-            
-        # Handle vocabulary size mismatch (e.g. when adding new language tokens)
+
+        # load .pt checkpoint
+        t3_state = torch.load(
+            ckpt_dir / "t3_nepali_checkpoint.pt",
+            map_location="cpu",
+            weights_only=True
+        )
+
+        # handle wrapped checkpoints
+        if "model" in t3_state:
+            t3_state = t3_state["model"]
+
+        if "state_dict" in t3_state:
+            t3_state = t3_state["state_dict"]
+
+        # remove training wrappers if present
+        t3_state = {
+            k.replace("module.", "")
+            .replace("model.", "")
+            .replace("patched_model.", ""): v
+            for k, v in t3_state.items()
+        }
+
+        # Handle vocabulary size mismatch
         state_vocab_size = t3_state["text_emb.weight"].shape[0]
         model_vocab_size = t3.hp.text_tokens_dict_size
-        if state_vocab_size != model_vocab_size:
-            # If state is smaller, we can load it into the model's resized embeddings
-            # But t3.load_state_dict will fail if shapes don't match.
-            # So we resize the model to match the state, OR we pad the state.
-            # Providing a flexible way: resize model to state size first, then load, then resize back to desired size.
-            current_hp_size = t3.hp.text_tokens_dict_size
-            t3.resize_text_embeddings(state_vocab_size)
-            t3.load_state_dict(t3_state)
-            t3.resize_text_embeddings(current_hp_size)
-        else:
-            t3.load_state_dict(t3_state)
-        t3.to(device).eval()
 
+        if state_vocab_size != model_vocab_size:
+            print(f"Resizing embeddings: checkpoint={state_vocab_size}, model={model_vocab_size}")
+
+            current_hp_size = model_vocab_size
+
+            # temporarily resize model to checkpoint size
+            t3.resize_text_embeddings(state_vocab_size)
+
+            # load checkpoint
+            t3.load_state_dict(t3_state, strict=False)
+
+            # resize back to desired vocab size
+            t3.resize_text_embeddings(current_hp_size)
+
+        else:
+            t3.load_state_dict(t3_state, strict=False)
+
+        t3.to(device).eval()
+        
+
+        #loading the S3Gen model
         s3gen = S3Gen()
         s3gen.load_state_dict(
             load_safetensors(ckpt_dir / "s3gen.safetensors"), strict=False
@@ -192,7 +222,7 @@ class SwarlekhaNepaliTTS:
         weights_dir = Path(__file__).parent / "weights"
         weights_dir.mkdir(exist_ok=True)
         
-        for fpath in ["ve.safetensors", "t3_cfg.safetensors", "s3gen.safetensors","tokenizer_np.json", "conds.pt"]:
+        for fpath in ["ve.safetensors", "t3_nepali_checkpoint.pt", "s3gen.safetensors","tokenizer_np.json", "conds.pt"]:
             local_file = weights_dir / fpath
             if not local_file.exists():
                 print(f"Downloading {fpath} to {weights_dir}...")

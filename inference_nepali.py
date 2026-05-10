@@ -17,27 +17,27 @@ print(f"Using device: {device}")
 
 model = SwarlekhaNepaliTTS.from_pretrained(device=device)
 
-nepali_model_checkpoint = "swarlekha_model/weights/t3_nepali_checkpoint.pt"
+# nepali_model_checkpoint = "swarlekha_model/weights/t3_nepali_checkpoint.pt"
 
-resume_state = torch.load(
-    nepali_model_checkpoint,
-    map_location="cpu",
-    weights_only=True
-)
+# resume_state = torch.load(
+#     nepali_model_checkpoint,
+#     map_location="cpu",
+#     weights_only=True
+# )
 
-cleaned_state = {
-    k.replace("patched_model.", "").replace("model.", ""): v
-    for k, v in resume_state.items()
-}
+# cleaned_state = {
+#     k.replace("patched_model.", "").replace("model.", ""): v
+#     for k, v in resume_state.items()
+# }
 
-missing, unexpected = model.t3.load_state_dict(
-    cleaned_state,
-    strict=False
-)
+# missing, unexpected = model.t3.load_state_dict(
+#     cleaned_state,
+#     strict=False
+# )
 
-model.t3.to(device).eval()
-model.s3gen.tokenizer.to(device)
-model.ve.to(device)
+# model.t3.to(device).eval()
+# model.s3gen.tokenizer.to(device)
+# model.ve.to(device)
 
 
 
