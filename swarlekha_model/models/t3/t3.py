@@ -1,9 +1,19 @@
 # Copyright (c) 2025 Resemble AI
 # MIT License
 import logging
+from contextvars import ContextVar
 from typing import Union, Optional, List
 
 from tqdm import tqdm
+
+
+class GenerationCancelled(Exception):
+    """Raised by the step callback to abort T3 token generation early."""
+
+
+# Set this ContextVar to a callable(step: int, max_steps: int) before running
+# inference. Raise GenerationCancelled inside it to stop the loop early.
+t3_step_callback: ContextVar = ContextVar("t3_step_callback", default=None)
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
@@ -344,6 +354,7 @@ class T3(nn.Module):
         past = output.past_key_values
 
         # ---- Generation Loop using kv_cache ----
+        _cb = t3_step_callback.get()
         for i in tqdm(range(max_new_tokens), desc="Sampling", dynamic_ncols=True):
             logits = output.logits[:, -1, :]
 
@@ -371,6 +382,14 @@ class T3(nn.Module):
             predicted.append(next_token)
             generated_ids = torch.cat([generated_ids, next_token], dim=1)
 
+            if _cb is not None:
+                try:
+                    _cb(i + 1, max_new_tokens)
+                except GenerationCancelled:
+                    raise  # propagate to break the loop
+                except Exception:
+                    pass
+
             # Check for EOS token.
             if next_token.view(-1) == self.hp.stop_speech_token:
                 break
@@ -393,6 +412,16 @@ class T3(nn.Module):
             )
             # Update the kv_cache.
             past = output.past_key_values
+
+        # Signal that T3 token generation is done (step=-1 sentinel).
+        # This fires before S3Gen runs, so the frontend can show "synthesizing".
+        if _cb is not None:
+            try:
+                _cb(-1, max_new_tokens)
+            except GenerationCancelled:
+                raise
+            except Exception:
+                pass
 
         # Concatenate all predicted tokens along the sequence dimension.
         predicted_tokens = torch.cat(predicted, dim=1)  # shape: (B, num_tokens)

@@ -1,28 +1,50 @@
+import { useState, useCallback } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-import Hero from "./components/Hero";
-import VoiceGenerator from "./components/VoiceGenerator";
-import DemoSection from "./components/DemoSection";
-import Footer from "./components/Footer";
+import { AnimatePresence, motion } from "framer-motion";
+import Navbar from "./components/Navbar";
+import LoadingScreen from "./components/LoadingScreen";
+import HomePage from "./pages/HomePage";
+import CloningPage from "./pages/CloningPage";
 
 function App() {
+  const [ready, setReady] = useState(false);
+  const onReady = useCallback(() => setReady(true), []);
+
   return (
-    <div className="min-h-screen">
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: "rgba(17, 24, 39, 0.9)",
-            color: "#fff",
-            backdropFilter: "blur(10px)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-          },
-        }}
-      />
-      <Hero />
-      <VoiceGenerator />
-      <DemoSection />
-      <Footer />
-    </div>
+    <BrowserRouter>
+      <div className="flex flex-col" style={{ minHeight: "100vh", backgroundColor: "var(--bg)" }}>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: "var(--surface)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              fontSize: "13px",
+            },
+          }}
+        />
+
+        <AnimatePresence>
+          {!ready && <LoadingScreen onReady={onReady} />}
+        </AnimatePresence>
+
+        {ready && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col flex-1"
+          >
+            <Navbar />
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/cloning" element={<CloningPage />} />
+            </Routes>
+          </motion.div>
+        )}
+      </div>
+    </BrowserRouter>
   );
 }
 

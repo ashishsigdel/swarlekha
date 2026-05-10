@@ -3,52 +3,154 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg: #ffffff;
+    --bg-subtle: #f8f9fa;
+    --bg-muted: #f1f3f5;
+    --border: #e5e7eb;
+    --border-strong: #d1d5db;
+    --text: #0f172a;
+    --text-muted: #6b7280;
+    --text-subtle: #9ca3af;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --primary-text: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #f8f9fa;
+  }
+
+  .dark {
+    --bg: #09090b;
+    --bg-subtle: #111113;
+    --bg-muted: #18181b;
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-subtle: #71717a;
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --primary-light: #1e1b4b;
+    --primary-text: #ffffff;
+    --surface: #18181b;
+    --surface-raised: #27272a;
+  }
+
   body {
-    @apply bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800;
-    @apply text-white min-h-screen;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s, color 0.2s;
   }
 }
 
 @layer components {
-  .glass-morphism {
-    @apply bg-white/10 backdrop-blur-md border border-white/20;
-  }
-
-  .gradient-text {
-    @apply bg-gradient-to-r from-blue-400 via-cyan-400 to-teal-400 bg-clip-text text-transparent;
-  }
-
   .btn-primary {
-    @apply px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl;
+    @apply px-5 py-2.5 rounded-lg font-medium text-sm transition-all duration-150;
+    background-color: var(--primary);
+    color: var(--primary-text);
+  }
+  .btn-primary:hover {
+    background-color: var(--primary-hover);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-secondary {
-    @apply px-6 py-3 glass-morphism hover:bg-white/20 rounded-lg font-semibold transition-all duration-300;
+    @apply px-5 py-2.5 rounded-lg font-medium text-sm transition-all duration-150 border;
+    border-color: var(--border-strong);
+    color: var(--text);
+    background-color: var(--surface);
+  }
+  .btn-secondary:hover {
+    background-color: var(--bg-muted);
   }
 
-  .input-field {
-    @apply w-full px-4 py-3 glass-morphism rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none placeholder-gray-400 text-white transition-all duration-300;
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-medium text-sm transition-all duration-150;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover {
+    background-color: var(--bg-muted);
+    color: var(--text);
   }
 
   .card {
-    @apply glass-morphism rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300;
+    @apply rounded-xl border p-5;
+    border-color: var(--border);
+    background-color: var(--surface);
+  }
+
+  .input-field {
+    @apply w-full px-3.5 py-2.5 rounded-lg text-sm border transition-all duration-150 outline-none;
+    border-color: var(--border);
+    background-color: var(--bg-subtle);
+    color: var(--text);
+  }
+  .input-field:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+  }
+  .input-field::placeholder {
+    color: var(--text-subtle);
+  }
+
+  .label {
+    @apply block text-xs font-medium mb-1.5;
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .nav-link {
+    @apply text-sm font-medium transition-colors duration-150;
+    color: var(--text-muted);
+  }
+  .nav-link:hover {
+    color: var(--text);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  .badge-primary {
+    background-color: var(--primary-light);
+    color: var(--primary);
+  }
+
+  .divider {
+    border-color: var(--border);
+  }
+
+  .tab-active {
+    background-color: var(--primary);
+    color: var(--primary-text);
+  }
+  .tab-inactive {
+    color: var(--text-muted);
+  }
+  .tab-inactive:hover {
+    background-color: var(--bg-muted);
+    color: var(--text);
   }
 }
 
-/* Custom scrollbar */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 10px;
+  width: 6px;
+  height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(6, 182, 212, 0.5);
-  border-radius: 5px;
+  background: var(--border-strong);
+  border-radius: 3px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.8);
+  background: var(--text-subtle);
 }
