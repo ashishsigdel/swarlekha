@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import json
 import threading
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -42,10 +43,13 @@ else:
 
 english_model = None
 nepali_model = None
+active_language: Optional[str] = None
 
 # Track model loading status for the frontend loading screen.
 # Values: "pending" | "loading" | "loaded" | "error"
 model_status: dict[str, str] = {"english": "pending", "nepali": "pending"}
+
+model_lock = threading.Lock()
 
 # Per-session cancel events: session_id -> threading.Event
 _cancel_events: dict[str, threading.Event] = {}
@@ -64,51 +68,86 @@ def _remove_cancel_event(session_id: str) -> None:
         _cancel_events.pop(session_id, None)
 
 
+def _normalize_language(lang: str) -> str:
+    normalized = (lang or "english").lower().strip()
+    if normalized not in {"english", "nepali"}:
+        raise HTTPException(status_code=400, detail="Unsupported language")
+    return normalized
+
+
+def _clear_model_cache() -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif hasattr(torch, "mps") and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+
+def _unload_model(lang: str) -> None:
+    global english_model, nepali_model
+
+    if lang == "english":
+        english_model = None
+    else:
+        nepali_model = None
+    model_status[lang] = "pending"
+    _clear_model_cache()
+
+
+def _load_model(lang: str):
+    global english_model, nepali_model, active_language
+
+    normalized = _normalize_language(lang)
+
+    with model_lock:
+        if normalized == "english" and english_model is not None and model_status["english"] == "loaded":
+            active_language = "english"
+            return english_model
+        if normalized == "nepali" and nepali_model is not None and model_status["nepali"] == "loaded":
+            active_language = "nepali"
+            return nepali_model
+
+        if active_language and active_language != normalized:
+            _unload_model(active_language)
+
+        model_status[normalized] = "loading"
+        try:
+            if normalized == "english":
+                english_model = SwarlekhaTTS.from_pretrained(device=device)
+                active_language = "english"
+                model_status["english"] = "loaded"
+                model_status["nepali"] = "pending"
+                return english_model
+
+            nepali_model = SwarlekhaNepaliTTS.from_pretrained(device=device)
+            active_language = "nepali"
+            model_status["nepali"] = "loaded"
+            model_status["english"] = "pending"
+            return nepali_model
+        except Exception:
+            model_status[normalized] = "error"
+            raise
+
+
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
 
 def _resolve_model(lang: str):
-    if lang == "nepali":
-        if nepali_model is None:
-            raise HTTPException(status_code=503, detail="Nepali model is not loaded")
-        return nepali_model
-    if english_model is None:
-        raise HTTPException(status_code=503, detail="English model is not loaded")
-    return english_model
+    try:
+        return _load_model(lang)
+    except HTTPException:
+        raise
+    except Exception as e:
+        normalized = _normalize_language(lang)
+        raise HTTPException(status_code=500, detail=f"Failed to load {normalized} model: {str(e)}")
 
 
 @app.on_event("startup")
 async def startup_event():
-    global english_model, nepali_model
-
-    loop = asyncio.get_event_loop()
-
-    def load_english():
-        global english_model
-        model_status["english"] = "loading"
-        try:
-            english_model = SwarlekhaTTS.from_pretrained(device=device)
-            model_status["english"] = "loaded"
-            print("English model loaded.")
-        except Exception as e:
-            model_status["english"] = "error"
-            print(f"Failed to load English model: {e}")
-
-    def load_nepali():
-        global nepali_model
-        model_status["nepali"] = "loading"
-        try:
-            nepali_model = SwarlekhaNepaliTTS.from_pretrained(device=device)
-            model_status["nepali"] = "loaded"
-            print("Nepali model loaded.")
-        except Exception as e:
-            model_status["nepali"] = "error"
-            print(f"Failed to load Nepali model: {e}")
-
-    # Load sequentially (models share GPU memory)
-    await loop.run_in_executor(None, load_english)
-    await loop.run_in_executor(None, load_nepali)
+    model_status["english"] = "pending"
+    model_status["nepali"] = "pending"
+    print("Swarlekha backend ready. Models will load on demand.")
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +169,29 @@ async def health_check():
         "status": "healthy",
         "device": device,
         "model_status": model_status,
+        "active_language": active_language,
         # Convenience booleans kept for compatibility
+        "english_model_loaded": model_status["english"] == "loaded",
+        "nepali_model_loaded": model_status["nepali"] == "loaded",
+    }
+
+
+@app.post("/api/models/load")
+async def load_model(language: str = Form(...)):
+    lang = _normalize_language(language)
+    loop = asyncio.get_event_loop()
+
+    try:
+        await loop.run_in_executor(None, lambda: _load_model(lang))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load {lang} model: {str(e)}")
+
+    return {
+        "language": lang,
+        "model_status": model_status,
+        "active_language": active_language,
         "english_model_loaded": model_status["english"] == "loaded",
         "nepali_model_loaded": model_status["nepali"] == "loaded",
     }

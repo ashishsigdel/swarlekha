@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Upload, Mic, Play, Download, X, Volume2, Square } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
-import { generateVoiceStream, cancelGeneration, getResultUrl, GenerationPhase } from "../services/api";
+import { generateVoiceStream, cancelGeneration, getResultUrl, GenerationPhase, loadLanguageModel } from "../services/api";
 
 type Language = "english" | "nepali";
 
@@ -15,6 +15,12 @@ type ProgressState =
   | { phase: "complete" }
   | { phase: "cancelled" };
 
+type ModelState =
+  | { phase: "idle"; language: null; error?: string }
+  | { phase: "loading"; language: Language; error?: string }
+  | { phase: "loaded"; language: Language; error?: string }
+  | { phase: "error"; language: Language; error: string };
+
 const PHASE_LABELS: Record<string, string> = {
   preparing: "Preparing voice…",
   generating: "Generating speech tokens",
@@ -24,6 +30,18 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 const PHASES = ["preparing", "generating", "synthesizing"] as const;
+
+const MODEL_STATUS_LABELS: Record<ModelState["phase"], string> = {
+  idle: "Choose a language to load the model",
+  loading: "Loading model…",
+  loaded: "Model ready",
+  error: "Model failed to load",
+};
+
+const LANGUAGE_LABELS: Record<Language, string> = {
+  english: "English",
+  nepali: "Nepali",
+};
 
 function phaseIndex(phase: string): number {
   return PHASES.indexOf(phase as typeof PHASES[number]);
@@ -38,6 +56,7 @@ const VoiceGenerator = () => {
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [useClone, setUseClone] = useState(false);
   const [language, setLanguage] = useState<Language>("english");
+  const [modelState, setModelState] = useState<ModelState>({ phase: "idle", language: null });
 
   const sessionIdRef = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -48,6 +67,31 @@ const VoiceGenerator = () => {
     progress !== null &&
     progress.phase !== "complete" &&
     progress.phase !== "cancelled";
+
+  const isModelReady = modelState.phase === "loaded" && modelState.language === language;
+  const isModelLoading = modelState.phase === "loading";
+  const controlsDisabled = isGenerating || !isModelReady;
+
+  const handleLanguageSelect = async (lang: Language) => {
+    setLanguage(lang);
+    setGeneratedAudio(null);
+
+    if (modelState.phase === "loaded" && modelState.language === lang) {
+      return;
+    }
+
+    setModelState({ phase: "loading", language: lang });
+
+    try {
+      await loadLanguageModel(lang);
+      setModelState({ phase: "loaded", language: lang });
+      toast.success(`${LANGUAGE_LABELS[lang]} model loaded`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load model";
+      setModelState({ phase: "error", language: lang, error: msg });
+      toast.error(msg);
+    }
+  };
 
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted.length > 0) {
@@ -92,6 +136,7 @@ const VoiceGenerator = () => {
 
   const handleGenerate = async () => {
     if (!text.trim()) { toast.error("Enter some text first"); return; }
+    if (!isModelReady) { toast.error("Load the selected model first"); return; }
     setProgress({ phase: "preparing" });
     setGeneratedAudio(null);
     sessionIdRef.current = null;
@@ -158,60 +203,120 @@ const VoiceGenerator = () => {
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: "var(--bg)" }}>
       {/* Toolbar */}
-      <div
-        className="flex-none flex items-center justify-between px-5 py-3 border-b gap-4"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div
-          className="flex items-center gap-1 p-1 rounded-lg border"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
-        >
-          {(["english", "nepali"] as Language[]).map((lang) => (
+      <div className="flex-none border-b" style={{ borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between px-5 py-3 gap-4">
+          <div
+            className="flex items-center gap-1 p-1 rounded-lg border"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
+          >
+            {(["english", "nepali"] as Language[]).map((lang) => (
+              <button
+                key={lang}
+                onClick={() => handleLanguageSelect(lang)}
+                disabled={isGenerating || isModelLoading}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
+                  language === lang ? "tab-active" : "tab-inactive"
+                }`}
+              >
+                {lang === "english" ? "🇺🇸 English" : "🇳🇵 Nepali"}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="flex items-center gap-1 p-1 rounded-lg border"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
+          >
             <button
-              key={lang}
-              onClick={() => setLanguage(lang)}
-              disabled={isGenerating}
+              onClick={() => { setUseClone(false); setAudioFile(null); }}
+              disabled={controlsDisabled}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
-                language === lang ? "tab-active" : "tab-inactive"
+                !useClone ? "tab-active" : "tab-inactive"
               }`}
             >
-              {lang === "english" ? "🇺🇸 English" : "🇳🇵 Nepali"}
+              Default Voice
             </button>
-          ))}
+            <button
+              onClick={() => setUseClone(true)}
+              disabled={controlsDisabled}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
+                useClone ? "tab-active" : "tab-inactive"
+              }`}
+            >
+              Clone Voice
+            </button>
+          </div>
+
+          <input
+            type="text"
+            value={voiceName}
+            onChange={(e) => setVoiceName(e.target.value)}
+            disabled={controlsDisabled}
+            placeholder="Session name…"
+            className="input-field w-40 text-xs py-2"
+          />
         </div>
 
-        <div
-          className="flex items-center gap-1 p-1 rounded-lg border"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
-        >
-          <button
-            onClick={() => { setUseClone(false); setAudioFile(null); }}
-            disabled={isGenerating}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
-              !useClone ? "tab-active" : "tab-inactive"
-            }`}
+        <div className="px-5 pb-3">
+          <div
+            className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
           >
-            Default Voice
-          </button>
-          <button
-            onClick={() => setUseClone(true)}
-            disabled={isGenerating}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
-              useClone ? "tab-active" : "tab-inactive"
-            }`}
-          >
-            Clone Voice
-          </button>
-        </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-subtle)" }}>
+                Model status
+              </div>
+              <div className="text-sm font-medium" style={{ color: "var(--text)" }}>
+                {modelState.phase === "idle" && MODEL_STATUS_LABELS.idle}
+                {modelState.phase === "loading" && `Loading ${LANGUAGE_LABELS[modelState.language]} model…`}
+                {modelState.phase === "loaded" && `${LANGUAGE_LABELS[modelState.language]} model ready`}
+                {modelState.phase === "error" && `Failed to load ${LANGUAGE_LABELS[modelState.language]} model`}
+              </div>
+            </div>
 
-        <input
-          type="text"
-          value={voiceName}
-          onChange={(e) => setVoiceName(e.target.value)}
-          disabled={isGenerating}
-          placeholder="Session name…"
-          className="input-field w-40 text-xs py-2"
-        />
+            <div className="flex items-center gap-2">
+              {isModelLoading && (
+                <motion.div
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: "var(--primary)" }}
+                  animate={{ opacity: [1, 0.35, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                />
+              )}
+              <span
+                className="badge"
+                style={{
+                  color:
+                    modelState.phase === "loaded"
+                      ? "#22c55e"
+                      : modelState.phase === "error"
+                      ? "#ef4444"
+                      : "var(--text-subtle)",
+                  borderColor:
+                    modelState.phase === "loaded"
+                      ? "rgba(34, 197, 94, 0.35)"
+                      : modelState.phase === "error"
+                      ? "rgba(239, 68, 68, 0.35)"
+                      : "var(--border)",
+                  backgroundColor: "var(--surface)",
+                }}
+              >
+                {modelState.phase === "idle"
+                  ? "Waiting"
+                  : modelState.phase === "loading"
+                  ? "Loading"
+                  : modelState.phase === "loaded"
+                  ? "Ready"
+                  : "Error"}
+              </span>
+            </div>
+          </div>
+          {modelState.phase === "error" && (
+            <p className="mt-2 text-xs" style={{ color: "#ef4444" }}>
+              {modelState.error}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Main workspace */}
@@ -226,7 +331,7 @@ const VoiceGenerator = () => {
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              disabled={isGenerating}
+              disabled={controlsDisabled}
               placeholder={
                 language === "nepali"
                   ? "यहाँ आफ्नो पाठ लेख्नुहोस्…"
@@ -295,7 +400,7 @@ const VoiceGenerator = () => {
 
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
-                    disabled={isGenerating}
+                    disabled={controlsDisabled}
                     className="mt-3 w-full btn-secondary flex items-center justify-center gap-2 text-sm"
                     style={isRecording ? { color: "#ef4444", borderColor: "#ef4444" } : {}}
                   >
@@ -327,11 +432,11 @@ const VoiceGenerator = () => {
             ) : (
               <button
                 onClick={handleGenerate}
-                disabled={!text.trim()}
+                disabled={!text.trim() || !isModelReady}
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4 fill-current" />
-                Generate
+                {isModelReady ? "Generate" : "Load model first"}
               </button>
             )}
           </div>
@@ -402,10 +507,16 @@ const VoiceGenerator = () => {
                   <Volume2 className="w-7 h-7" style={{ color: "var(--text-subtle)" }} />
                 </div>
                 <p className="text-sm font-medium mb-1" style={{ color: "var(--text-muted)" }}>
-                  No audio yet
+                  {modelState.phase === "loaded"
+                    ? "No audio yet"
+                    : modelState.phase === "loading"
+                    ? `Loading ${LANGUAGE_LABELS[modelState.language]} model...`
+                    : "No model loaded"}
                 </p>
                 <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-                  Enter text and click Generate
+                  {modelState.phase === "loaded"
+                    ? "Enter text and click Generate"
+                    : "Choose a language above to load the model"}
                 </p>
               </motion.div>
             )}

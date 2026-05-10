@@ -6,10 +6,19 @@ const api = axios.create({ baseURL: API_BASE_URL });
 
 export type ModelLoadStatus = "pending" | "loading" | "loaded" | "error";
 
+export interface LoadModelResponse {
+  language: "english" | "nepali";
+  model_status: { english: ModelLoadStatus; nepali: ModelLoadStatus };
+  active_language: "english" | "nepali" | null;
+  english_model_loaded: boolean;
+  nepali_model_loaded: boolean;
+}
+
 export interface HealthResponse {
   status: string;
   device: string;
   model_status: { english: ModelLoadStatus; nepali: ModelLoadStatus };
+  active_language: "english" | "nepali" | null;
   english_model_loaded: boolean;
   nepali_model_loaded: boolean;
 }
@@ -25,6 +34,15 @@ export type GenerationPhase =
 
 export const healthCheck = async (): Promise<HealthResponse> => {
   const res = await api.get<HealthResponse>("/api/health");
+  return res.data;
+};
+
+export const loadLanguageModel = async (
+  language: "english" | "nepali"
+): Promise<LoadModelResponse> => {
+  const formData = new FormData();
+  formData.append("language", language);
+  const res = await api.post<LoadModelResponse>("/api/models/load", formData);
   return res.data;
 };
 
